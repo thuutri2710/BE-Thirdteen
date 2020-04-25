@@ -32,14 +32,16 @@ var clientList = [];
 
 app.get('/',function(req,res){
     res.sendfile('public/html/index.html');
-})
+});
 
 io.on('connection', function(socketClient){
     if (clients<4){
         clients++;
+        console.log(clients)
         var clientInfo = {};
         clientInfo.dataId = socketClient.id;
         clientList.push(clientInfo);
+        console.log(clientList);
         if(clients == 4){
             newDecks = functions.randomDecks(decks);
             var partOfDecks = [];
@@ -64,7 +66,8 @@ io.on('connection', function(socketClient){
         })
     }
     else{
-        io.emit('full');
+        console.log("Phòng đủ người chơi!");
+        io.to(socketClient.id).emit('full');
     }
 })
 
