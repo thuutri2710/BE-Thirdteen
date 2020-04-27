@@ -21,9 +21,18 @@ const decks = [
     [ 15, 0 ], [ 15, 1 ], [ 15, 2 ], [ 15, 3 ]
   ]  
 var newDecks = [];
+var currentTurn = {
+    currentDecks : [],
+    id : '',
+};
 var clients = 0;
+var order = 1;
+var _turn = 0;
+var current_turn = 1; //init for the first turn
+let timeOut;
+const MAX_WAITING = 5000;
 
-var server = app.listen(port,function(){
+var server = app.listen(port,()=>{
     console.log("Server on port " + port);
 })
 
@@ -32,43 +41,100 @@ var clientList = [];
 
 app.get('/',function(req,res){
     res.sendfile('public/html/index.html');
-});
+})
 
 io.on('connection', function(socketClient){
     if (clients<4){
         clients++;
-        console.log(clients)
-        var clientInfo = {};
-        clientInfo.dataId = socketClient.id;
-        clientList.push(clientInfo);
-        console.log(clientList);
+        clientList.push(socketClient);
         if(clients == 4){
             newDecks = functions.randomDecks(decks);
             var partOfDecks = [];
             clientList.forEach(function(client, id){
                 partOfDecks = newDecks.slice(id*13,id*13+13);
-                io.to(client.dataId).emit('randomDecks',
+                client.emit('randomDecks',
                     {
                         decks : partOfDecks,
                         id : id
                     }
                 );
             })
+            let i = 0;
+            console.log("Start-");
+            clientList[_turn].emit('yourTurn',{
+                currentDecks : [],
+                // id : socketClient.id,
+                isFirst : true
+            });
+            // socketClient.on('nextTurn',(data){
+            //     if(data.length != 0){
+            //         console.log(i);
+            //     }
+            //     i++;
+            // })
         }
-        socketClient.on('disconnect',function(){
+        socketClient.on('passTurn', (data) =>{
+            if(clientList[_turn].id == socketClient.id){
+                // after pass turn , update current Turn 
+                currentTurn.currentDecks = data.playerTurn || currentTurn.currentDecks;
+                currentTurn.id = data.playerTurn ? data.id : currentTurn.id;
+                socketClient.emit('endTurn');
+                if(data.isWin){
+                    let msg = 'The player ' + _turn + 'win ' + order;
+                    io.emit('winner', msg);
+                    order++;
+                }
+                console.log(_turn);
+                _turn = current_turn++ % clientList.length;
+                //reset new round 
+                if (currentTurn.id == clientList[_turn].id){
+                    clientList[_turn].emit('yourTurn', {
+                        currentDecks : currentTurn.currentDecks,
+                        // id : clientList[_turn].id,
+                        isFirst : true
+                    });
+                }
+                else{
+                    clientList[_turn].emit('yourTurn', {
+                        currentDecks : currentTurn.currentDecks,
+                        // id : clientList[_turn].id,
+                        isFirst : false
+                    });
+                }
+            }
+        })
+        socketClient.on('disconnect',()=>{
             clients--;
-            clientList = clientList.filter(client => client.dataId != socketClient.id);
+            clientList = clientList.filter(client => client.id != socketClient.id);
             if(clients !=4 ){
                 clientList.forEach(function(client, id){
-                    io.to(client.dataId).emit('lackOfPlayers');
+                    client.emit('lackOfPlayers');
                 })
             }
         })
     }
     else{
-        console.log("Phòng đủ người chơi!");
-        io.to(socketClient.id).emit('full');
+        io.emit('full');
     }
 })
 
 
+function nextTurn(){
+    _turn = current_turn++ % clientList.length;
+    clientList[_turn].emit('yourTurn');
+    triggerTimeout();
+}
+
+function triggerTimeout(){
+    timeOut = setTimeout(()=>{
+        nextTurn();let idx = decksOfPlayer.findIndex(e => e[0] * 13 + e[1] == pickedDecks[0] * 13 + pickedDecks[1]);
+        decksOfPlayer.splice(idx, pickedDecks.length);
+    },MAX_WAITING);
+}
+
+function resetTimeout(){
+    if(typeof timeOut === 'object'){
+        console.log("timeout reset");
+        clearTimeout(timeOut);
+    }
+}
